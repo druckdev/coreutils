@@ -686,6 +686,10 @@ static enum
   /* Ignore '.', '..', and files specified by --ignore.  */
   IGNORE_DOT_AND_DOTDOT,
 
+  /* Ignore files specified by --ignore, and files whose names start with '.' if
+     the directory contains other files. */
+  IGNORE_DOT_AND_DOTDOT_WHEN_EMPTY,
+
   /* Ignore only files specified by --ignore.  */
   IGNORE_MINIMAL
 } ignore_mode;
@@ -825,7 +829,8 @@ enum
    non-character as a pseudo short option, starting with CHAR_MAX + 1.  */
 enum
 {
-  AUTHOR_OPTION = CHAR_MAX + 1,
+  ALL_WHEN_EMPTY_OPTION = CHAR_MAX + 1,
+  AUTHOR_OPTION,
   BLOCK_SIZE_OPTION,
   COLOR_OPTION,
   DEREFERENCE_COMMAND_LINE_SYMLINK_TO_DIR_OPTION,
@@ -864,6 +869,7 @@ static struct option const long_options[] =
   {"size", no_argument, nullptr, 's'},
   {"width", required_argument, nullptr, 'w'},
   {"almost-all", no_argument, nullptr, 'A'},
+  {"all-when-empty", no_argument, nullptr, ALL_WHEN_EMPTY_OPTION},
   {"ignore-backups", no_argument, nullptr, 'B'},
   {"classify", optional_argument, nullptr, 'F'},
   {"file-type", no_argument, nullptr, FILE_TYPE_INDICATOR_OPTION},
@@ -2130,6 +2136,10 @@ decode_switches (int argc, char **argv)
             format_opt = one_per_line;
           break;
 
+        case ALL_WHEN_EMPTY_OPTION:
+          ignore_mode = IGNORE_DOT_AND_DOTDOT_WHEN_EMPTY;
+          break;
+
         case AUTHOR_OPTION:
           print_author = true;
           break;
@@ -2995,6 +3005,8 @@ print_dir (char const *name, char const *realname, bool command_line_arg)
   struct dirent *next;
   uintmax_t total_blocks = 0;
   static bool first = true;
+  int ignore_mode_bkp = ignore_mode;
+  bool printed_files = false;
 
   errno = 0;
   dirp = opendir (name);
@@ -3059,6 +3071,10 @@ print_dir (char const *name, char const *realname, bool command_line_arg)
       dired_outstring (":\n");
     }
 
+  /* Use default behaviour for first pass */
+  if (ignore_mode == IGNORE_DOT_AND_DOTDOT_WHEN_EMPTY)
+    ignore_mode = IGNORE_DEFAULT;
+
   /* Read the directory entries, and insert the subfiles into the 'cwd_file'
      table.  */
 
@@ -3106,6 +3122,10 @@ print_dir (char const *name, char const *realname, bool command_line_arg)
                   sort_files ();
                   print_current_files ();
                   clear_files ();
+
+                  /* Remember that files were found for
+                   * IGNORE_DOT_AND_DOTDOT_WHEN_EMPTY */
+                  printed_files = true;
                 }
             }
         }
@@ -3123,6 +3143,8 @@ print_dir (char const *name, char const *realname, bool command_line_arg)
          uninterruptible.  This ensures that it handles signals promptly.  */
       process_signals ();
     }
+
+  /* TODO: Reenter loop with different ignore_mode if no files were found */
 
   if (closedir (dirp) != 0)
     {
@@ -5445,6 +5467,8 @@ Sort entries alphabetically if none of -cftuvSUX nor --sort is specified.\n\
       fputs (_("\
   -a, --all                  do not ignore entries starting with .\n\
   -A, --almost-all           do not list implied . and ..\n\
+      --all-when-empty       print entries starting with . when none other\n\
+                             exist\n\
       --author               with -l, print the author of each file\n\
   -b, --escape               print C-style escapes for nongraphic characters\n\
 "), stdout);
